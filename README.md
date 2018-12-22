@@ -2,4 +2,4 @@
 Competition Report from Kaggle and etc.
 
 ## Thanks to
-https://github.com/EternalFeather/snownlp
+https://github.com/isnowfy/snownlp

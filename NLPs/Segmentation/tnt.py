@@ -29,7 +29,7 @@ class Tnt(object):
 		self.bi = defaultdict(int)		# bi-gram 词数
 		self.tri = defaultdict(int)		# tri-gram 词数
 		self.word = {}		# 所有的word具有的tag种类
-		self.trans = {}		#
+		self.trans = {}
 
 	def train(self, data):
 		for sentence in data:
@@ -71,10 +71,8 @@ class Tnt(object):
 					uni = self.l1 * self.tnt_div(self.uni[s3], self.tnt_total(self.uni))
 					bi = self.l2 * self.tnt_div(self.bi[(s2, s3)], self.uni[s2])
 					tri = self.l3 * self.tnt_div(self.tri[(s1, s2, s3)], self.bi[(s1, s2)])
-					if uni + bi + tri == 0.0:
-						self.trans[(s1, s2, s3)] = - 99999
-					else:
-						self.trans[(s1, s2, s3)] = log(uni + bi + tri)
+					# 全为0表示不存在这种tag的组合，此时采用log1p平滑
+					self.trans[(s1, s2, s3)] = log(uni + bi + tri + 1)
 
 		self.save(self.status, './Segmentation/checkpoints/tnt/status.pkl')
 		self.save(self.wd, './Segmentation/checkpoints/tnt/wd.pkl')
@@ -101,10 +99,7 @@ class Tnt(object):
 		tmp = self.eosd.d[tag]
 		if tmp == 0:
 			return log(1.0 / len(self.status))
-		if (tag, 'EOS') in self.eos.d:
-			return log(self.eos.d[(tag, 'EOS')] / self.eosd.d[tag])
-		else:
-			return -99999
+		return log(self.eos.d[(tag, 'EOS')] / self.eosd.d[tag])
 
 	def restore(self):
 		self.status = pickle.load(open('./Segmentation/checkpoints/tnt/status.pkl', 'rb'))

@@ -94,26 +94,27 @@ class nlp(object):
     """
     Pre-process for nlp tasks
     Include:
-        - single sentence (pairs) service
-            - seg
-            - cleaner
-            - get by pos-tag
-            - get cossim（based on corpus）
-            - get info entropy
-            - get gini coefficients
+        - service
+            - Preprocessing
+                - build[cleaner + seg + shuffle + tag + dictionary + get tfidf + tokenize + padding] (done)
+                - seg (done)
+                - cleaner (done)
+                - get by pos-tag (done)
+                - tokenize[transform]（done）
+                - padding (done)
+                - shuffle data (done)
+                - get bow (done)
+                - get tf / idf (done)
 
-        - all corpus service
-            - word count
-            - get tf / idf
-            - get bow
-            - shuffle data
-            - tokenize（text_to_sequence / sequence_to_text）
-            - padding
-            - make batch
+            - Statistic
+                - get cossim（done）
+                - get info entropy (done)
+                - get gini coefficients (done)
+                - word count (done)
 
-        - data based
-            - get stopwords
-            - load embedding matrix
+            - Tools
+                - get stopwords (done)
+                - load embedding matrix (done)
 
     """
     def __init__(self):
@@ -122,9 +123,9 @@ class nlp(object):
         logging.info('This tool contains these features...')
         logging.info('function names:\n' + '\n'.join(fun_names))
 
-    def build(self, corpus, embedding_size, num_words, seq_length, embedding_file_path=None, emb_type='self',
-              stopwords=None, specialwords=None, remove_alphas=False, remove_numbers=False, remove_urls=False,
-              remove_punctuation=False, remove_ip_address=False, language='zh', shuffle=False, padding=True):
+    def build(self, corpus, num_words, seq_length, stopwords=None, specialwords=None, remove_alphas=False,
+              remove_numbers=False, remove_urls=False, remove_punctuation=False, remove_ip_address=False,
+              language='zh', shuffle=False, padding=True):
         if isinstance(corpus, str):
             if corpus == '':
                 raise ValueError('Input must be at least one word!')
@@ -132,7 +133,6 @@ class nlp(object):
         else:
             self.corpus = corpus
 
-        self.embedding_size = embedding_size
         self.num_words = num_words
         self.seq_length = seq_length
         self.language = language
@@ -152,16 +152,16 @@ class nlp(object):
                                             remove_punctuation=remove_punctuation,
                                             remove_ip_address=remove_ip_address) for sent in self.corpus]
 
-        self.seg_list = self._seg_all(language=self.language, pos=False)
+        self.seg_list = [self.seg(sent, False, language) for sent in self.cleaned_corpus]
         if shuffle:
-            self.seg_list = self.shuffle_data()
+            self.seg_list = self.shuffle_data(self.seg_list)
 
         logging.info('Build vocabulary {dictionary} ...')
         self.dictionary = corpora.Dictionary(self.seg_list)
 
         logging.info('Calculate tf-idf features {tf/idf/tfidf_vectorizer} ...')
         self.tf = self.get_tf(self.seg_list)
-        self.idf = self.get_idf()
+        self.idf = self.get_idf(self.seg_list)
         self.tfidf_vectorizer.fit([" ".join(seg) for seg in self.seg_list])
 
         logging.info('Build tokenizer {tokenizer/sequences/word_index} ...')
@@ -171,10 +171,7 @@ class nlp(object):
         self.word_index = self.tokenizer.word_index
 
         logging.info('Padding sequences {padded_sequences} ...')
-        self.padded_sequences = self.padding()
-
-        logging.info('load embedding matrix {embedding_matrix} ...')
-        self.embedding_matrix = self.load_embedding_matrix(self.embedding_size, embedding_file_path, emb_type)
+        self.padded_sequences = self.padding(self.sequences, self.seq_length)
 
     def seg(self, sentence, pos, language):
         if language == 'zh':
@@ -194,7 +191,7 @@ class nlp(object):
                 remove_urls=False, remove_punctuation=False, remove_ip_address=False):
         alphas = re.compile(r"[A-Za-z]+", re.IGNORECASE)
         numbers = re.compile(r"\d+", re.IGNORECASE)
-        email = re.compile(r"", re.IGNORECASE)
+        email = re.compile(r"^[A-Za-z0-9\u4e00-\u9fa5]+@[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+)+$", re.IGNORECASE)
         url_1 = re.compile(r"https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)", re.IGNORECASE)
         url_2 = re.compile(r"[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,6}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)", re.IGNORECASE)
         url_3 = re.compile(r"(https?|ftp|file)://[-A-Za-z0-9+&&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]", re.IGNORECASE)
@@ -297,6 +294,8 @@ class nlp(object):
             seg_sent2 = [" ".join(self.seg(sent2, pos=False))]
         else:
             seg_sent2 = [" ".join(self.seg(sent, pos=False)) for sent in sent2]
+        if self.tfidf_vectorizer is None:
+            raise ValueError("Please build tfidf_vectorizer with corpus...")
         s1_matrix = self.tfidf_vectorizer.transform(seg_sent1)
         s2_matrix = self.tfidf_vectorizer.transform(seg_sent2)
         return cs(s1_matrix, s2_matrix).flatten()
@@ -324,16 +323,19 @@ class nlp(object):
 
         return g
 
-    def word_count(self):
+    def word_count(self, corpus):
+        if isinstance(corpus, str):
+            corpus = [corpus]
         word_dict = defaultdict(int)
-        if not self.pos:
-            for sent in self.seg_list:
-                for word in sent:
-                    word_dict[word] += 1
+        for sent in corpus:
+            for word in sent:
+                word_dict[word] += 1
         word_dict = sorted(word_dict.items(), key=operator.itemgetter(1), reversed=True)
         return word_dict
 
     def get_tf(self, corpus):
+        if isinstance(corpus, str):
+            corpus = [corpus]
         tf_list = []
 
         for doc in corpus:
@@ -349,11 +351,13 @@ class nlp(object):
 
         return tf_list
 
-    def get_idf(self):
+    def get_idf(self, corpus):
+        if isinstance(corpus, str):
+            corpus = [corpus]
         df_dic, idf_dic = defaultdict(int), defaultdict(int)
-        tt_count = len(self.seg_list)
+        tt_count = len(corpus)
 
-        for doc in self.seg_list:
+        for doc in corpus:
             for word in set(doc):
                 df_dic[word] += 1
 
@@ -364,25 +368,28 @@ class nlp(object):
 
         return idf_dic, default_idf
 
-    def get_bow(self):
-        return [self.dictionary.doc2bow(doc) for doc in self.seg_list]
+    def get_bow(self, corpus):
+        if isinstance(corpus, str):
+            corpus = [corpus]
+        if self.dictionary is None:
+            raise ValueError("Please build dictionary for corpus ...")
+        return [self.dictionary.doc2bow(doc) for doc in corpus]
 
-    def shuffle_data(self):
-        indices = np.arange(len(self.seg_list))
+    def shuffle_data(self, corpus):
+        indices = np.arange(len(corpus))
         shuffled_indices = np.random.permutation(indices)
-        return self.seg_list[shuffled_indices]
+        return corpus[shuffled_indices]
 
-    def transform(self, reversed=False):
+    def transform(self, tokenizer, corpus, reversed=False):
         if reversed:
-            return self.tokenizer.sequences_to_texts(self.seg_list)
+            return tokenizer.sequences_to_texts(corpus)
         else:
-            return self.tokenizer.texts_to_sequences(self.seg_list)
+            return tokenizer.texts_to_sequences(corpus)
 
-    def padding(self):
-        return pad_sequences(self.sequences, maxlen=self.seq_length)
-
-    def make_batch(self):
-        pass
+    def padding(self, corpus, seq_length):
+        if isinstance(corpus, str):
+            corpus = [corpus]
+        return pad_sequences(corpus, maxlen=seq_length)
 
     def get_stopwords(self, filename, encoding='utf-8'):
         return [sw.strip('\n') for sw in open(filename, 'r', encoding=encoding).readlines()]
@@ -418,9 +425,6 @@ class nlp(object):
             embedding_matrix = np.random.uniform(low=-0.2, high=0.2, size=(nb_words + 2, embedding_size))
 
         return embedding_matrix
-
-    def _seg_all(self, language, pos=False):
-        return [self.seg(sent, pos, language) for sent in self.cleaned_corpus]
 
 
 class algorithms(object):
@@ -476,7 +480,7 @@ class algorithms(object):
         return textrank(seg_list, keyword_num)
 
     def _lsi_keyword_extractor(self, seg_list, keyword_num, num_topic):
-        corpus = self.nlp_tools.get_bow()
+        corpus = self.nlp_tools.get_bow(self.seg_list)
         dictionary = self.nlp_tools.dictionary
 
         tfidf_model = models.TfidfModel(corpus)
@@ -487,7 +491,7 @@ class algorithms(object):
         return _get_topic_sim(seg_list, dictionary, tfidf_model, model, wordtopic_dic)[:keyword_num]
 
     def _lda_keyword_extractor(self, seg_list, keyword_num, num_topic):
-        corpus = self.nlp_tools.get_bow()
+        corpus = self.nlp_tools.get_bow(self.seg_list)
         dictionary = self.nlp_tools.dictionary
 
         tfidf_model = models.TfidfModel(corpus)

@@ -128,7 +128,8 @@ class nlp(object):
 
     def build(self, corpus, num_words, seq_length, stopwords=None, specialwords=None, remove_alphas=False,
               remove_numbers=False, remove_urls=False, remove_punctuation=False, remove_email=False,
-              remove_ip_address=False, keep_chinese_only=False, language='zh', shuffle=False, padding='post'):
+              remove_ip_address=False, keep_chinese_only=False, language='zh', shuffle=False, padding='post',
+              tfidf_norm=False, min_count=0, max_perc=0.8):
         """
         采用通用语料来构建标准的数据处理框架，该语料作为基本的贝叶斯先验依据。
         :param corpus: 作为先验知识的语料库
@@ -167,10 +168,10 @@ class nlp(object):
         self.language = language
         self.stopwords = stopwords
         self.specialwords = specialwords
-        self.tfidf_vectorizer = TfidfVectorizer()
+        self.tfidf_vectorizer = TfidfVectorizer(subliner_tf=tfidf_norm, min_df=min_count, max_df=max_perc)
 
         logging.info('Clean and seg words ヾ(^Д^*)/')
-        self.cleaned_corpus = [self.cleaner(sent,
+        self.cleaned_corpus = [self.cleaner(str(sent),
                                             stopwords=self.stopwords,
                                             specialwords=self.specialwords,
                                             remove_alphas=remove_alphas,
@@ -249,7 +250,7 @@ class nlp(object):
         ips = re.compile(r"(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}(:)?[0-9]{1,8}", re.IGNORECASE)
 
         chinese_pattern = re.compile(u'[\u4e00-\u9fa5]+')
-        stop_p = p + "！？｡。＂＃＄％＆＇（）＊＋，－／：；＜＝＞＠［＼］＾＿｀｛｜｝～｟｠｢｣､、〃》「」『』【】〔〕〖〗〘〙〚〛〜〝〞〟〰�〾〿–—‘・’‛“”„‟…‧﹏."
+        stop_p = p
         num_maps = {'{}'.format(i): '{}'.format(j) for i, j in zip(range(10), ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖'])}
 
         # 关键成分过滤
